@@ -1,0 +1,11 @@
+import type { MetadataRoute } from 'next';
+import { brand } from '@/config/brand';
+
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? `https://${brand.domain}`;
+
+export default function robots(): MetadataRoute.Robots {
+  return {
+    rules: { userAgent: '*', allow: '/', disallow: ['/admin', '/api', '/pay'] },
+    sitemap: `${siteUrl}/sitemap.xml`,
+  };
+}

@@ -1,0 +1,171 @@
+// CRDPH — Computational Research and Data Processing Hub
+// Content & CMS data model for the CRDPH website.
+//
+// History: migrated from the legacy PHP/MySQL site's tables (users, banner, events,
+// gallery) and extended. None of these models hold domain-specific (e.g. health)
+// data — the enterprise solution catalogue and pipeline-stage models currently live
+// in src/data/solutions.ts and can be promoted to Prisma models when staff need to
+// edit them in /admin.
+// Target: managed Postgres (Supabase / Neon / RDS). See README "Database".
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Runtime connection. In dev: local Postgres (docker-compose). In
+  // production: Supabase's POOLED connection string (port 6543,
+  // ?pgbouncer=true) — required for serverless functions, which open many
+  // short-lived connections that a direct Postgres connection can't handle
+  // at scale.
+  url = env("DATABASE_URL")
+  // Used only by `prisma migrate` / `prisma db push`. In production this
+  // must be Supabase's DIRECT connection string (port 5432, no pgbouncer) —
+  // migrations need a real, non-pooled connection. In dev, same as url.
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Auth / staff accounts (was: `users` table, sha1 passwords, u_type/u_status ints)
+// Public visitor "register/login" from the old site is dropped - it had no
+// real purpose for a content-only marketing site. This model is for CMS users only
+// (ADMIN can manage users and roles; EDITOR can manage content).
+// ---------------------------------------------------------------------------
+model AdminUser {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String // bcrypt/argon2, never sha1
+  role         Role     @default(EDITOR)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+}
+
+// Was: `banner` table (homepage slider images)
+model Banner {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  imageUrl      String
+  imagePublicId String? // Cloudinary public_id — lets us delete the asset when this row is deleted
+  sortOrder     Int      @default(0)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+}
+
+// Was: `events` table
+// RETIRED — no UI uses this model since the startup redesign (the events page was removed).
+// Kept deliberately so `prisma migrate` / `db push` do NOT drop existing rows. To remove it
+// for good: export the data you want, delete this model, then run a migration.
+model Event {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  summary     String
+  body        String // rich text / markdown
+  location    String?
+  startDate   DateTime
+  endDate     DateTime?
+  coverImage  String?
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Was: `gallery` table
+// RETIRED — no UI uses this model since the startup redesign (the gallery was removed).
+// Kept deliberately so `prisma migrate` / `db push` do NOT drop existing rows. To remove it
+// for good: export the data you want, delete this model, then run a migration.
+model GalleryImage {
+  id            String   @id @default(cuid())
+  imageUrl      String
+  imagePublicId String? // Cloudinary public_id
+  caption       String?
+  album         String? // e.g. "Platform Launch 2026"
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+// New: blog was hardcoded HTML in the old site (no real DB table). Modeled
+// properly now so content staff can publish without a developer.
+// RETIRED — no UI uses this model since the startup redesign (the blog was removed).
+// Kept deliberately so `prisma migrate` / `db push` do NOT drop existing rows. To remove it
+// for good: export the data you want, delete this model, then run a migration.
+model Post {
+  id                 String    @id @default(cuid())
+  slug               String    @unique
+  title              String
+  excerpt            String
+  body               String // markdown/MDX or rendered HTML from the CMS
+  coverImage         String?
+  coverImagePublicId String? // Cloudinary public_id
+  author             String?
+  publishedAt        DateTime?
+  isPublished        Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+// Team & leadership-board members, managed at /admin/team. Only isActive
+// members show on the public /team page; former staff are disabled rather
+// than deleted so historical records and attribution are preserved.
+// RETIRED — no UI uses this model since the startup redesign (the team page was removed).
+// Kept deliberately so `prisma migrate` / `db push` do NOT drop existing rows. To remove it
+// for good: export the data you want, delete this model, then run a migration.
+model TeamMember {
+  id            String   @id @default(cuid())
+  name          String
+  role          String
+  photoUrl      String?
+  photoPublicId String? // Cloudinary public_id
+  isBoard       Boolean  @default(false) // false = staff, true = advisory/leadership board
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// New: downloadable files (whitepapers, technical guides, documentation)
+// uploaded via Cloudinary's raw/auto resource type.
+// RETIRED — no UI uses this model since the startup redesign (the resources page was removed).
+// Kept deliberately so `prisma migrate` / `db push` do NOT drop existing rows. To remove it
+// for good: export the data you want, delete this model, then run a migration.
+model Resource {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  fileUrl     String
+  filePublicId String?
+  fileType    String? // e.g. "pdf", "docx" — for display/icon purposes
+  createdAt   DateTime @default(now())
+}
+
+// Data-audit requests from the homepage form (category + interest are stored in `subject`).
+// (Originally a generic contact form; the legacy PHP form posted to a third-party demo
+// endpoint and was never actually wired to this site.)
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String?
+  message   String
+  createdAt DateTime @default(now())
+  handled   Boolean  @default(false)
+}
+
+// New: newsletter / partner interest signups
+// RETIRED — no UI uses this model since the startup redesign (the newsletter sign-up was removed).
+// Kept deliberately so `prisma migrate` / `db push` do NOT drop existing rows. To remove it
+// for good: export the data you want, delete this model, then run a migration.
+model Subscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now())
+}
